@@ -67,7 +67,12 @@ enum class ByteCode : RawByteCode {
   STR_JMP_EQ = 0x16,
   // Jump if two strings are not equal
   STR_JMP_NEQ = 0x17,
-
+  
+  // Compare-to-Zero Bytecodes
+  
+  INT_JMP_EQ_ZERO = 0X18,
+  INT_JMP_NEQ_ZERO = 0X19,
+  
   // Object Bytecodes
 
   NEW_OBJECT = 0x20,
@@ -79,6 +84,7 @@ enum class ByteCode : RawByteCode {
   CALL_INDIRECT = 0x23,
 
   SYSTEM_COLLECT = 0x24,
+
 };
 
 inline const char *toString(ByteCode bc) {

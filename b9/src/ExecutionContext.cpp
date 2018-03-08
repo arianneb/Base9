@@ -161,6 +161,12 @@ StackElement ExecutionContext::interpret(const std::size_t functionIndex) {
       case ByteCode::STR_JMP_NEQ:
         // TODO
         break;
+      case ByteCode::INT_JMP_EQ_ZERO:
+        instructionPointer += doIntJmpEqZero(instructionPointer->parameter());
+        break;
+      case ByteCode::INT_JMP_NEQ_ZERO:
+        instructionPointer += doIntJmpNeqZero(instructionPointer->parameter());
+        break;
       case ByteCode::NEW_OBJECT:
         doNewObject();
         break;
@@ -302,6 +308,22 @@ Parameter ExecutionContext::doIntJmpLe(Parameter delta) {
   std::int32_t right = stack_.pop().getInteger();
   std::int32_t left = stack_.pop().getInteger();
   if (left <= right) {
+    return delta;
+  }
+  return 0;
+}
+
+Parameter ExecutionContext::doIntJmpEqZero(Parameter delta) {
+  std::int32_t top = stack_.pop().getInteger();
+  if (top == 0) {
+    return delta;
+  }
+  return 0;
+}
+
+Parameter ExecutionContext::doIntJmpNeqZero(Parameter delta) {
+  std::int32_t top = stack_.pop().getInteger();
+  if (top != 0) {
     return delta;
   }
   return 0;

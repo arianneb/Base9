@@ -80,6 +80,10 @@ class ExecutionContext {
 
   Parameter doIntJmpLe(Parameter delta);
 
+  Parameter doIntJmpEqZero(Parameter delta);
+
+  Parameter doIntJmpNeqZero(Parameter delta);
+
   void doStrPushConstant(Parameter value);
 
   void doNewObject();
