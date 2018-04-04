@@ -40,5 +40,8 @@ A submodule is a git repository within another git repository. It allows a devel
 
 [submodules documentation]: https://git-scm.com/book/en/v2/Git-Tools-Submodules
 
+### Variadic Function
+A variadic function is a function that can take a variable number of arguments.
+
 ### Virtual machine 
 A program that takes a sequence of instructions as input and executes them. Programs given to a virtual machine are ahead-of-time compiled into bytecodes, and then interpreted. 

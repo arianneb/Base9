@@ -287,35 +287,11 @@ With our OMR submodule, and with the correct `#include`'s in our base9 headers, 
 
 ### 2.1 The Base9 Compiler
 
-Let's start by taking a look at [b9/src/Compiler.hpp], where we define our `Compiler` class. 
+Let's start by taking a look at [b9/include/b9/compiler/Compiler.hpp], where we define our `Compiler` class. 
 
-[b9/src/Compiler.hpp]: https://github.com/b9org/b9/blob/master/b9/include/b9/compiler/Compiler.hpp
+[b9/include/b9/compiler/Compiler.hpp]: https://github.com/b9org/b9/blob/master/b9/include/b9/compiler/Compiler.hpp
 
-The `Compiler` class constructor takes a `VirtualMachine` class (above in section 1.5), and a `Config` struct. It is called as follows: 
-
-`Compiler(VirtualMachine &virtualMachine, const Config &cfg);`
-
-The `Config` struct is in [b9/include/b9/VirtualMachine.hpp] and is defined as follows:
-
-[b9/include/b9/VirtualMachine.hpp]: https://github.com/b9org/b9/blob/master/b9/include/b9/VirtualMachine.hpp
-
-```
-struct Config {
-  std::size_t maxInlineDepth = 0;  //< The JIT's max inline depth
-  bool jit = false;                //< Enable the JIT
-  bool directCall = false;         //< Enable direct JIT to JIT calls
-  bool passParam = false;          //< Pass arguments in CPU registers
-  bool lazyVmState = false;        //< Simulate the VM state
-  bool debug = false;              //< Enable debug code
-  bool verbose = false;            //< Enable verbose printing and tracing
-};
-```
-
-We use the `Config` class to configure the JIT with a number of settings. Note that `directCall`, `passParam`, and `lazyVmState` are all JIT optimizations that we'll discuss later. The rest of the values are explained in the comments. 
-
-Let's have a look at the `Compiler` class:
-
-```
+```c++
 class Compiler {
  public:
   Compiler(VirtualMachine &virtualMachine, const Config &cfg);
@@ -335,7 +311,76 @@ class Compiler {
 };
 ```
 
-`TR::TypeDictionary` allows us to define which types are supported by our b9porcelain language. It's used by the `MethodBuilder` class in OMR JitBuilder. We define our supported types in [b9/include/b9/compiler/GlobalTypes.hpp].
+Lets start with the constructor:
+
+```c++
+Compiler(VirtualMachine &virtualMachine, const Config &cfg);
+```
+
+The `Compiler` class constructor takes a `VirtualMachine` class (see section 1.5 for more on the `VirtualMachine` class), and a `Config` struct. The `Config` struct is defined in [b9/include/b9/VirtualMachine.hpp] as follows:
+
+[b9/include/b9/VirtualMachine.hpp]: https://github.com/b9org/b9/blob/master/b9/include/b9/VirtualMachine.hpp
+
+```c++
+struct Config {
+  std::size_t maxInlineDepth = 0;  //< The JIT's max inline depth
+  bool jit = false;                //< Enable the JIT
+  bool directCall = false;         //< Enable direct JIT to JIT calls
+  bool passParam = false;          //< Pass arguments in CPU registers
+  bool lazyVmState = false;        //< Simulate the VM state
+  bool debug = false;              //< Enable debug code
+  bool verbose = false;            //< Enable verbose printing and tracing
+};
+```
+
+We use the `Config` class to configure the JIT with a number of settings, all of which are set to false by default.
+
+Next in the compiler class we have a `generateCode` function declaration.
+
+```c++
+JitFunction generateCode(const std::size_t functionIndex);
+```
+
+This function returns a `JitFunction`, which is a [variadic function] pointer defined in [b9/include/b9/VirtualMachine.hpp] as follows: 
+
+[b9/include/b9/VirtualMachine.hpp]: https://github.com/b9org/b9/blob/master/b9/include/b9/VirtualMachine.hpp
+[variadic function]: ./Dictionary.md#variadic-function
+
+```c++
+extern "C" typedef Om::RawValue (*JitFunction)(void *executionContext, ...);
+```
+
+It takes an `*execution context` as it's first argument, followed by a variable number of arguments. Now lets take a look at the `generateCode` function definition:
+
+```c++
+JitFunction Compiler::generateCode(const std::size_t functionIndex) {
+  const FunctionDef *function = virtualMachine_.getFunction(functionIndex);
+  MethodBuilder methodBuilder(virtualMachine_, functionIndex);
+
+  uint8_t *result = nullptr;
+  auto rc = compileMethodBuilder(&methodBuilder, &result);
+
+  if (rc != 0) {
+    std::cout << "Failed to compile function: " << function->name
+              << " nargs: " << function->nargs << std::endl;
+    throw b9::CompilationException{"IL generation failed"};
+  }
+
+  return (JitFunction)result;
+}
+```
+
+This function is important because it the the place where we take our `FunctionDef`, JIT compile it, and return a pointer to the entry point of the newly JITed method, which is simply a `uint64_t`. The `rc` value is set to 0 and should remain as 0 through the `compileMethodBuilder` call. If it does not remain 0, something has gone wrong. Verbose output has been omitted from the above function for simplicity. `generateCode` is currently only called by the VM function `generateAllCode`,  because thus far we've only implemented the ability to JIT compile either everything or nothing. We run our program using the JIT with the following command: 
+
+`./b9run/b9run -jit ./test/<program>.b9mod`
+
+The next line in the `Compiler` class is:
+
+```
+const GlobalTypes &globalTypes() const { return globalTypes_; }
+```
+
+Our `GlobalTypes are defined in [b9/include/b9/compiler/GlobalTypes.hpp] as follows:
 
 [b9/include/b9/compiler/GlobalTypes.hpp]: https://github.com/b9org/b9/blob/master/b9/include/b9/compiler/GlobalTypes.hpp
 
@@ -362,49 +407,13 @@ class GlobalTypes {
 };
 ```
 
-We use the `TR::TypeDictionary` to define our `GlobalTypes`, as shown above. 
-
-Now let's have a look in [b9/src/Compiler.cpp] at the `Compiler::generateCode` function:
-
-[b9/src/Compiler.cpp]: https://github.com/b9org/b9/blob/master/b9/src/Compiler.cpp
+The next line in `Compiler` is:
 
 ```c++
-JitFunction Compiler::generateCode(const std::size_t functionIndex) {
-  const FunctionDef *function = virtualMachine_.getFunction(functionIndex);
-  MethodBuilder methodBuilder(virtualMachine_, functionIndex);
-
-  if (cfg_.debug)
-    std::cout << "MethodBuilder for function: " << function->name
-              << " is constructed" << std::endl;
-
-  uint8_t *result = nullptr;
-  auto rc = compileMethodBuilder(&methodBuilder, &result);
-
-  if (rc != 0) {
-    std::cout << "Failed to compile function: " << function->name
-              << " nargs: " << function->nargs << std::endl;
-    throw b9::CompilationException{"IL generation failed"};
-  }
-
-  if (cfg_.debug)
-    std::cout << "Compilation completed with return code: " << rc
-              << ", code address: " << static_cast<void *>(result) << std::endl;
-
-  return (JitFunction)result;
-}
+TR::TypeDictionary &typeDictionary() { return typeDictionary_; }
 ```
 
-The `generateCode` function takes a `functionIndex` as it's only parameter. First we need to access the current function using `virtualMachine_.getFunction(functionIndex)`. `getFunction()` is in the `VirtualMachine` class, and it uses the function index to access a given `FunctionDef` in the Module's function vector. We store it's return value in the function pointer `*function`. 
-
-The checks `if(cfg_.debug)` are found throughout our codebase, and we use them to check if we're running the VM in debug mode. If we are, we provide additional output. It's a useful debugging strategy that you may or may not choose to employ. 
-
-The `rc` value is set to 0 and should remain as 0 through the `compileMethodBuilder` call. If it does not remain 0, something has gone wrong. 
-
-Our return value is simply a pointer to a uint8_t, which serves as the entry point into our Jitted function. 
-
-`generateCode` is currently only called by the VM function `generateAllCode`,  because thus far we've only implemented the ability to JIT compile either everything or nothing. We run our program using the JIT with the following command: 
-
-`./b9run/b9run -jit ./test/<program>.b9mod`
+`TR::TypeDictionary` allows us to define which types are supported by our b9porcelain language. It's used to configure the `MethodBuilder` class in OMR JitBuilder. We use the `TR::TypeDictionary` to define our `GlobalTypes`, as shown above. 
 
 
 ### 2.2 JIT Features
